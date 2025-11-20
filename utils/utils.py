@@ -1,9 +1,69 @@
 # utils.py
 
+#--------------------------
+# Basketball Ref Scraper
+#--------------------------
+from __future__ import annotations
+
+import pandas as pd
+from pathlib import Path
+
+
+def load_bref_per_game(
+    season: int,
+    cache_path: str | None = None,
+    use_cache_if_fail: bool = True,
+) -> pd.DataFrame:
+    """
+    Load Basketball-Reference per-game stats for a given season.
+
+    - First tries to scrape via pandas.read_html.
+    - If that fails and a cache_path exists and use_cache_if_fail=True,
+      it falls back to the cached CSV.
+    """
+    url = f"https://www.basketball-reference.com/leagues/NBA_{season}_per_game.html"
+
+    try:
+        # Let pandas handle the HTTP request
+        dfs = pd.read_html(url, attrs={"id": "per_game_stats"})
+        df = dfs[0]
+
+        # Drop repeated header rows
+        df = df[df["Rk"] != "Rk"].reset_index(drop=True)
+
+        # Convert numeric-looking columns
+        non_numeric = ["Player", "Team", "Pos", "Awards"]
+        numeric_cols = [c for c in df.columns if c not in non_numeric]
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+
+        # Make Rk int-like
+        df["Rk"] = df["Rk"].astype("Int64")
+
+        # Save cache if requested
+        if cache_path is not None:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(cache_path, index=False)
+
+        return df
+
+    except Exception as e:
+        # Optional fallback to existing CSV
+        if cache_path and use_cache_if_fail and Path(cache_path).exists():
+            print(
+                f"Warning: failed to scrape {url} ({e}). "
+                f"Falling back to cached file: {cache_path}"
+            )
+            return pd.read_csv(cache_path)
+
+        # If no cache, re-raise
+        raise
+
+
+
 # -------------------------------------------------------------------
 # Player Index + Weighted Merge Utilities for roundBall
 # -------------------------------------------------------------------
-from __future__ import annotations
+#from __future__ import annotations
 import re
 from pathlib import Path
 import unicodedata  # add this near the top of utils.py if not already there
